@@ -1,80 +1,40 @@
-from flask_sqlalchemy import SQLAlchemy
+import sqlalchemy
+
+from sqlalchemy import CheckConstraint
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import validates
 
-db = SQLAlchemy()
 
-class Author(db.Model):
-    __tablename__ = 'authors'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, unique=True, nullable=False)
-    phone_number = db.Column(db.String)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
-    updated_at = db.Column(db.DateTime, onupdate=db.func.now())
+connection_string = "sqlite:///database.db"   # for SQLite, local file
+db   = create_engine(connection_string)
+base = declarative_base()
 
-    @validates('name')
-    def validate_name(self, key, name):
-        if not name:
-            raise ValueError("Author must have a name.")
+from sqlalchemy.orm import validates
 
-        existing_author = Author.query.filter(Author.name == name).first()
+class EmailAddress(base):
+    __tablename__ = 'address'
 
-        if existing_author and existing_author.id != self.id:
-            raise ValueError("Author with this name already exists.")
+    id = Column(Integer, primary_key=True)
+    email = Column(String)
 
-        return name
+    @validates('email')
+    def validate_email(self, key, address):
+        if '@' not in address:
+            raise ValueError("failed simple email validation")
+        return address
 
-    @validates('phone_number')
-    def validate_phone_number(self, key, phone_number):
-       if phone_number and (not phone_number.isdigit() or len(phone_number) != 10):
-           raise ValueError("Phone number must be 10 digits")
-       return phone_number
+Session = sessionmaker(db)
+session = Session()
 
-    def _repr_(self):
-       return f'Author(id={self.id}, name={self.name})'
+base.metadata.create_all(db)
 
+email = EmailAddress(email='banana')
+session.add(email)
 
-class Post(db.Model):
-    __tablename__ = 'posts'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String, nullable=False)
-    content = db.Column(db.String)
-    category = db.Column(db.String)
-    summary = db.Column(db.String)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
-    updated_at = db.Column(db.DateTime, onupdate=db.func.now())
-
-    @validates('title')
-    def validate_title(self, key, title):
-        if not title:
-            raise ValueError("Post must have a title.")
-        clickbait_keywords = ["Won't Believe", "Secret", "Top", "Guess"]
-        if not any(keyword in title for keyword in clickbait_keywords):
-            raise ValueError("Post title must contain one of the following: 'Won't Believe', 'Secret', 'Top [number]', 'Guess'")
-        return title
-    
-    
-
-    @validates('content')
-    def validate_content(self, key, content):
-        if len(content) < 250:
-            raise ValueError("Post content must be at least 250 characters long.")
-        return content
-
-    @validates('summary')
-    def validate_summary(self, key, summary):
-        if len(summary) > 250:
-            raise ValueError("Post summary cannot be more than 250 characters.")
-        return summary
-
-    @validates('category')
-    def validate_category(self, key, category):
-        valid_categories = ["Fiction", "Non-Fiction"]
-        if category not in valid_categories:
-            raise ValueError("Post category must be either 'Fiction' or 'Non-Fiction'.")
-        return category
-    
-    
-    def __repr__(self):
-        return f'Post(id={self.id}, title={self.title}, content={self.content}, summary={self.summary})'
+try:
+    session.commit()
+except sqlalchemy.exc.IntegrityError as e:
+    print("Integrity violation blocked!")
+    session.rollback()
